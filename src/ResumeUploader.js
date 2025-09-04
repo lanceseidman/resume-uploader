@@ -216,87 +216,55 @@ export default function ResumeUploader() {
     setWalletInfo(null);
 
     try {
-      // 1) Upload PDF → POST /Extract
-      const uploadRes = await fetch(`${API_URL}/Extract`, {
+      // 1) Upload PDF → POST /extract  (must be lower-case)
+      const uploadRes = await fetch(`${API_URL}/extract`, {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
-          ...(API_KEY && { "x-api-key": API_KEY }),
+          ...(API_KEY && { "x-api-key": API_KEY }), // key only needed for /extract
         },
         body: file,
       });
-      
       if (!uploadRes.ok) throw new Error("Upload failed: " + (await uploadRes.text()));
-      const { jobId, walletId, walletVersionId } = await uploadRes.json();
 
+      const { jobId, walletId, walletVersionId } = await uploadRes.json();
       setStatus("Uploaded! Processing your resume");
 
-      // 2) Poll status → GET /JobStatus/{jobId}
-      let completedWalletVersionId = null;
+      // 2) Poll status → GET /status/{jobId} (no custom headers → avoids preflight)
+      let completedWalletVersionId = walletVersionId || null;
       while (true) {
         await sleep(3000);
-        const statusRes = await fetch(`${API_URL}/JobStatus/${jobId}`, {
-          headers: API_KEY ? { "x-api-key": API_KEY } : {},
-        });
-        
+        const statusRes = await fetch(`${API_URL}/status/${jobId}`);
         if (!statusRes.ok) continue;
 
         const data = await statusRes.json();
-        console.log("Status check:", data);
-
         if (data.Status === "COMPLETED") {
           completedWalletVersionId = data.WalletVersionId || walletVersionId;
           setWalletInfo({
             jobId: data.JobId,
-            walletId: data.WalletId || walletId, // Use the stable wallet ID
-            walletVersionId: data.WalletVersionId,
+            walletId: data.WalletId || walletId,
+            walletVersionId: completedWalletVersionId,
             createdAt: data.CreatedAt,
             completedAt: data.CompletedAt,
             isActive: data.IsActive,
-            sourceDocuments: data.SourceDocuments
+            sourceDocuments: data.SourceDocuments,
           });
           break;
         }
-        
-        if (data.Status === "FAILED") {
-          throw new Error("Processing failed.");
-        }
-        
+        if (data.Status === "FAILED") throw new Error("Processing failed.");
         setStatus(`Processing your resume (${String(data.Status || "").toLowerCase()})`);
       }
 
       setStatus("Done! Fetching results...");
 
-      // 3) Fetch the latest active wallet → GET /query?latest=true (fallback)
-      let walletRes;
-      try {
-        walletRes = await fetch(`${API_URL}/wallet/latest`, {
-          headers: API_KEY ? { "x-api-key": API_KEY } : {},
-        });
-      } catch (walletError) {
-        // Fallback to query endpoint
-        console.log("Wallet endpoint not found, using query fallback");
-        walletRes = await fetch(`${API_URL}/query?latest=true`, {
-          headers: API_KEY ? { "x-api-key": API_KEY } : {},
-        });
-      }
-      
-      if (!walletRes.ok) {
-        // Final fallback: try to get the specific wallet version if latest fails
-        const fallbackRes = await fetch(`${API_URL}/query?walletVersionId=${completedWalletVersionId}`, {
-          headers: API_KEY ? { "x-api-key": API_KEY } : {},
-        });
-        
-        if (fallbackRes.ok) {
-          const fallbackWallet = await fallbackRes.json();
-          setResult(fallbackWallet.walletData || fallbackWallet);
-        } else {
-          throw new Error("Failed to fetch wallet data");
-        }
-      } else {
-        const wallet = await walletRes.json();
-        setResult(wallet.walletData || wallet);
-      }
+      // 3) Fetch JUST the JSON -> GET /wallet/{walletId}?walletVersionId=...
+      const walletRes = await fetch(
+        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}`
+      );
+      if (!walletRes.ok) throw new Error("Failed to fetch wallet data");
+
+      const wallet = await walletRes.json();
+      setResult(wallet.walletData || wallet); // keep only the parsed JSON payload
 
       setStatus("Done!");
     } catch (err) {
@@ -307,6 +275,7 @@ export default function ResumeUploader() {
     }
   }
 
+
   const renderStructuredResult = (data) => {
     if (!data || typeof data !== 'object') {
       return <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>;
@@ -314,113 +283,7 @@ export default function ResumeUploader() {
 
     return (
       <div>
-        {/* Personal Info */}
-        {data.personalInfo && (
-          <ComponentSection>
-            <ComponentTitle>Personal Information</ComponentTitle>
-            <div>
-              {data.personalInfo.name && <div><strong>Name:</strong> {data.personalInfo.name}</div>}
-              {data.personalInfo.email && <div><strong>Email:</strong> {data.personalInfo.email}</div>}
-              {data.personalInfo.phone && <div><strong>Phone:</strong> {data.personalInfo.phone}</div>}
-              {data.personalInfo.location && <div><strong>Location:</strong> {data.personalInfo.location}</div>}
-            </div>
-          </ComponentSection>
-        )}
-
-        {/* Skills */}
-        {data.skills && Object.keys(data.skills).length > 0 && (
-          <ComponentSection>
-            <ComponentTitle>Skills</ComponentTitle>
-            {Object.entries(data.skills).map(([category, skillList]) => (
-              <div key={category} style={{ marginBottom: '0.8em' }}>
-                <div style={{ fontWeight: '500', marginBottom: '0.4em' }}>{category}:</div>
-                <ComponentList>
-                  {Array.isArray(skillList) ? skillList.map((skill, idx) => (
-                    <SkillTag key={idx}>{skill}</SkillTag>
-                  )) : null}
-                </ComponentList>
-              </div>
-            ))}
-          </ComponentSection>
-        )}
-
-        {/* Experience */}
-        {data.experience && data.experience.length > 0 && (
-          <ComponentSection>
-            <ComponentTitle>Experience</ComponentTitle>
-            {data.experience.map((exp, idx) => (
-              <div key={idx} style={{ marginBottom: '1em', paddingBottom: '1em', borderBottom: idx < data.experience.length - 1 ? '1px solid #eee' : 'none' }}>
-                <div style={{ fontWeight: '600' }}>{exp.title} at {exp.company}</div>
-                <div style={{ color: '#666', fontSize: '0.9em' }}>
-                  {exp.startDate} - {exp.endDate}
-                </div>
-                {exp.description && <div style={{ marginTop: '0.5em' }}>{exp.description}</div>}
-                {exp.responsibilities && exp.responsibilities.length > 0 && (
-                  <ul style={{ marginTop: '0.5em', paddingLeft: '1.2em' }}>
-                    {exp.responsibilities.map((resp, respIdx) => (
-                      <li key={respIdx} style={{ fontSize: '0.9em', marginBottom: '0.2em' }}>{resp}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </ComponentSection>
-        )}
-
-        {/* Education */}
-        {data.education && data.education.length > 0 && (
-          <ComponentSection>
-            <ComponentTitle>Education</ComponentTitle>
-            {data.education.map((edu, idx) => (
-              <div key={idx} style={{ marginBottom: '0.8em' }}>
-                <div style={{ fontWeight: '600' }}>{edu.degree} in {edu.field}</div>
-                <div style={{ color: '#666' }}>{edu.school}</div>
-                <div style={{ fontSize: '0.9em' }}>
-                  {edu.graduationDate} {edu.gpa && `• GPA: ${edu.gpa}`}
-                </div>
-              </div>
-            ))}
-          </ComponentSection>
-        )}
-
-        {/* Certifications */}
-        {data.certifications && data.certifications.length > 0 && (
-          <ComponentSection>
-            <ComponentTitle>Certifications</ComponentTitle>
-            {data.certifications.map((cert, idx) => (
-              <div key={idx} style={{ marginBottom: '0.5em' }}>
-                <div style={{ fontWeight: '500' }}>{cert.name}</div>
-                <div style={{ color: '#666', fontSize: '0.9em' }}>
-                  {cert.issuer} • {cert.date}
-                </div>
-              </div>
-            ))}
-          </ComponentSection>
-        )}
-
-        {/* Other/Summary */}
-        {data.other && (
-          <ComponentSection>
-            <ComponentTitle>Additional Information</ComponentTitle>
-            {data.other.summary && (
-              <div style={{ marginBottom: '0.8em' }}>
-                <strong>Summary:</strong> {data.other.summary}
-              </div>
-            )}
-            {data.other.languages && data.other.languages.length > 0 && (
-              <div style={{ marginBottom: '0.5em' }}>
-                <strong>Languages:</strong> {data.other.languages.join(', ')}
-              </div>
-            )}
-            {data.other.interests && data.other.interests.length > 0 && (
-              <div>
-                <strong>Interests:</strong> {data.other.interests.join(', ')}
-              </div>
-            )}
-          </ComponentSection>
-        )}
-
-        {/* Raw JSON for debugging */}
+        {/* Raw JSON */}
         <ComponentSection>
           <ComponentTitle>Raw JSON Data</ComponentTitle>
           <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>
