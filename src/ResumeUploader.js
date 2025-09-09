@@ -221,7 +221,7 @@ export default function ResumeUploader() {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
-          ...(API_KEY && { "x-api-key": API_KEY }), // key only needed for /extract
+          ...(API_KEY && { "x-api-key": API_KEY }),
         },
         body: file,
       });
@@ -234,7 +234,11 @@ export default function ResumeUploader() {
       let completedWalletVersionId = walletVersionId || null;
       while (true) {
         await sleep(3000);
-        const statusRes = await fetch(`${API_URL}/status/${jobId}`);
+        const statusRes = await fetch(`${API_URL}/status/${jobId}`, {
+          headers: {
+            ...(API_KEY && { "x-api-key": API_KEY }),
+          },
+        });
         if (!statusRes.ok) continue;
 
         const data = await statusRes.json();
