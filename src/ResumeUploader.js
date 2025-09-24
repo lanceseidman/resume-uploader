@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import styled, { keyframes } from "styled-components";
 
-const API_URL = 'https://gan804cnbj.execute-api.us-east-1.amazonaws.com/prod'; //process.env.REACT_APP_API_URL;
+const API_URL = 'https://gan804cnbj.execute-api.us-east-1.amazonaws.com/prod; //process.env.REACT_APP_API_URL;
 const API_KEY = process.env.REACT_APP_API_KEY;
 
 // Animations
@@ -173,21 +173,6 @@ const ComponentTitle = styled.h4`
   padding-bottom: 0.3em;
 `;
 
-const ComponentList = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5em;
-`;
-
-const SkillTag = styled.span`
-  background: #3498db;
-  color: white;
-  padding: 0.2em 0.6em;
-  border-radius: 12px;
-  font-size: 0.8em;
-  font-weight: 500;
-`;
-
 function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
 
 export default function ResumeUploader() {
@@ -230,20 +215,27 @@ export default function ResumeUploader() {
       const { jobId, walletId, walletVersionId } = await uploadRes.json();
       setStatus("Uploaded! Processing your resume");
 
-      // 2) Poll status → GET /status/{jobId} (no custom headers → avoids preflight)
+      // 2) Poll status → GET /status/{jobId}
       let completedWalletVersionId = walletVersionId || null;
+      let clientResultFromStatus = null;
+
       while (true) {
         await sleep(3000);
         const statusRes = await fetch(`${API_URL}/status/${jobId}`, {
-          headers: {
-            ...(API_KEY && { "x-api-key": API_KEY }),
-          },
+          headers: { ...(API_KEY && { "x-api-key": API_KEY }) },
         });
         if (!statusRes.ok) continue;
 
         const data = await statusRes.json();
+
         if (data.Status === "COMPLETED") {
           completedWalletVersionId = data.WalletVersionId || walletVersionId;
+
+          // NEW: Prefer strict client result if status API exposes it
+          clientResultFromStatus = data.ClientResult || null;
+          // If your status returns a pointer, you could add a tiny API to proxy-download it.
+          // For now we only use inline ClientResult to avoid S3/CORS issues.
+
           setWalletInfo({
             jobId: data.JobId,
             walletId: data.WalletId || walletId,
@@ -261,15 +253,28 @@ export default function ResumeUploader() {
 
       setStatus("Done! Fetching results...");
 
-      // 3) Fetch JUST the JSON -> GET /wallet/{walletId}?walletVersionId=...
+      // 3) If we already have the strict JSON from status, use it and skip /wallet
+      if (clientResultFromStatus && typeof clientResultFromStatus === "object") {
+        setResult(clientResultFromStatus);
+        setStatus("Done!");
+        return;
+      }
+
+      // 4) Otherwise fetch the wallet wrapper → prefer clientParsed || walletData
       const walletRes = await fetch(
-        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}`
+        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}`,
+        { headers: { ...(API_KEY && { "x-api-key": API_KEY }) } }
       );
       if (!walletRes.ok) throw new Error("Failed to fetch wallet data");
 
       const wallet = await walletRes.json();
-      setResult(wallet.walletData || wallet); // keep only the parsed JSON payload
+      const parsed =
+        wallet.clientParsed ||          // embedded strict JSON (if API exposes it)
+        wallet.walletData ||            // your legacy embedded payload
+        wallet.result ||                // just-in-case other key name
+        wallet;                         // last resort: show whatever came back
 
+      setResult(parsed);
       setStatus("Done!");
     } catch (err) {
       console.error("Upload error:", err);
@@ -279,20 +284,12 @@ export default function ResumeUploader() {
     }
   }
 
-
   const renderStructuredResult = (data) => {
-    if (!data || typeof data !== 'object') {
-      return <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>;
-    }
-
     return (
-      <div>
-        {/* Raw JSON */}
-        <ComponentSection>
-          <ComponentTitle>Raw JSON Data</ComponentTitle>
-          <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>
-        </ComponentSection>
-      </div>
+      <ComponentSection>
+        <ComponentTitle>Raw JSON Data</ComponentTitle>
+        <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>
+      </ComponentSection>
     );
   };
 
@@ -325,7 +322,7 @@ export default function ResumeUploader() {
         <StatusContainer>
           <StatusText $status={status} $hasResult={!!result}>
             {status}
-            {status.toLowerCase().includes("processing") && <LoadingDots />}
+            {String(status || "").toLowerCase().includes("processing") && <LoadingDots />}
           </StatusText>
 
           {/* Wallet Information */}
@@ -335,11 +332,11 @@ export default function ResumeUploader() {
                 <strong>Wallet ID:</strong> {walletInfo.walletId} (stable)<br/>
                 <strong>Version ID:</strong> {walletInfo.walletVersionId} (unique)<br/>
                 <strong>Job ID:</strong> {walletInfo.jobId}<br/>
-                <strong>Created:</strong> {new Date(walletInfo.createdAt).toLocaleString()}<br/>
+                {walletInfo.createdAt && (
+                  <><strong>Created:</strong> {new Date(walletInfo.createdAt).toLocaleString()}<br/></>
+                )}
                 {walletInfo.completedAt && (
-                  <>
-                    <strong>Completed:</strong> {new Date(walletInfo.completedAt).toLocaleString()}<br/>
-                  </>
+                  <><strong>Completed:</strong> {new Date(walletInfo.completedAt).toLocaleString()}<br/></>
                 )}
                 <strong>Active Wallet:</strong> {walletInfo.isActive ? 'Yes' : 'No'}
               </WalletInfo>
