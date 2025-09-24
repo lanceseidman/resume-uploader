@@ -268,6 +268,7 @@ export default function ResumeUploader() {
       if (!walletRes.ok) throw new Error("Failed to fetch wallet data");
 
       const wallet = await walletRes.json();
+      console.log(wallet)
       const parsed =
         wallet.clientParsed ||          // embedded strict JSON (if API exposes it)
         wallet.walletData ||            // your legacy embedded payload
