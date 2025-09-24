@@ -272,9 +272,15 @@ export default function ResumeUploader() {
       if (!walletRes.ok) throw new Error("Failed to fetch wallet data");
 
       const wallet = await walletRes.json();
+      const parsed =
+        wallet.clientParsed       ||    // strict client JSON (snake_case)
+        wallet.walletData         ||    // normalized wallet JSON
+        wallet.Result             ||    // legacy
+        wallet;
+      setResult(parsed);
       // Prefer strict, snake_case object
-      const strict = wallet.clientParsed || wallet.walletData?.clientParsed;
-      setResult(strict || wallet.walletData || wallet);
+      //const strict = wallet.clientParsed || wallet.walletData?.clientParsed;
+      //setResult(strict || wallet.walletData || wallet);
 
       setStatus("Done!");
     } catch (err) {
