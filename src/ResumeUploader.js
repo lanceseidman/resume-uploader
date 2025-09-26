@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import styled, { keyframes } from "styled-components";
 
-const API_URL = 'https://235hn8z3q1.execute-api.us-east-1.amazonaws.com/prod'; //process.env.REACT_APP_API_URL;
+const API_URL = 'https://gan804cnbj.execute-api.us-east-1.amazonaws.com/prod'; //process.env.REACT_APP_API_URL;
 const API_KEY = process.env.REACT_APP_API_KEY;
 
 // Animations
@@ -230,7 +230,7 @@ export default function ResumeUploader() {
       const { jobId, walletId, walletVersionId } = await uploadRes.json();
       setStatus("Uploaded! Processing your resume");
 
-      // 2) Poll status → GET /status/{jobId} (no custom headers → avoids preflight)
+      // 2) Poll status → GET /status/{jobId}
       let completedWalletVersionId = walletVersionId || null;
       while (true) {
         await sleep(3000);
@@ -253,6 +253,10 @@ export default function ResumeUploader() {
             isActive: data.IsActive,
             sourceDocuments: data.SourceDocuments,
           });
+          // Prefer strict JSON if the status API inlined it
+          if (data.ClientResult) {
+            setResult(data.ClientResult);
+          }
           break;
         }
         if (data.Status === "FAILED") throw new Error("Processing failed.");
@@ -261,14 +265,22 @@ export default function ResumeUploader() {
 
       setStatus("Done! Fetching results...");
 
-      // 3) Fetch JUST the JSON -> GET /wallet/{walletId}?walletVersionId=...
+      // 3) Fetch JUST the JSON -> GET /wallet/{walletId}?walletVersionId=...&view=client
       const walletRes = await fetch(
-        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}`
+        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}&view=client`
       );
       if (!walletRes.ok) throw new Error("Failed to fetch wallet data");
 
       const wallet = await walletRes.json();
-      setResult(wallet.walletData || wallet); // keep only the parsed JSON payload
+      const parsed =
+        wallet.clientParsed       ||    // strict client JSON (snake_case)
+        wallet.walletData         ||    // normalized wallet JSON
+        wallet.Result             ||    // legacy
+        wallet;
+      setResult(parsed);
+      // Prefer strict, snake_case object
+      //const strict = wallet.clientParsed || wallet.walletData?.clientParsed;
+      //setResult(strict || wallet.walletData || wallet);
 
       setStatus("Done!");
     } catch (err) {
@@ -278,7 +290,6 @@ export default function ResumeUploader() {
       setIsLoading(false);
     }
   }
-
 
   const renderStructuredResult = (data) => {
     if (!data || typeof data !== 'object') {
@@ -325,7 +336,7 @@ export default function ResumeUploader() {
         <StatusContainer>
           <StatusText $status={status} $hasResult={!!result}>
             {status}
-            {status.toLowerCase().includes("processing") && <LoadingDots />}
+            {status && status.toLowerCase().includes("processing") && <LoadingDots />}
           </StatusText>
 
           {/* Wallet Information */}
