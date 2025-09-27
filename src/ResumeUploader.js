@@ -278,6 +278,7 @@ export default function ResumeUploader() {
         wallet.Result             ||    // legacy
         wallet;
       setResult(parsed);
+      console.log(wallet.walletData || wallet)
       // Prefer strict, snake_case object
       //const strict = wallet.clientParsed || wallet.walletData?.clientParsed;
       //setResult(strict || wallet.walletData || wallet);
