@@ -190,6 +190,37 @@ const SkillTag = styled.span`
 
 function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
 
+function reorderResumeKeys(data) {
+  if (!data || typeof data !== 'object') return data;
+  
+  // This is the desired key order from the backend's STRICT_RESUME_INSTRUCTIONS
+  const ORDER = [
+    "skills_all",
+    "personal_info",
+    "experience",
+    "education_and_training",
+    "other"
+  ];
+
+  const orderedData = {};
+  
+  // 1. Iterate over the desired order, copying existing keys
+  for (const key of ORDER) {
+    if (key in data) {
+      orderedData[key] = data[key];
+    }
+  }
+
+  // 2. Add any extra keys not in the desired order (for safety, though none are expected)
+  for (const key in data) {
+    if (!(key in orderedData)) {
+      orderedData[key] = data[key];
+    }
+  }
+  
+  return orderedData;
+}
+
 export default function ResumeUploader() {
   const [file, setFile] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
@@ -278,6 +309,7 @@ export default function ResumeUploader() {
         wallet.Result             ||    // legacy
         wallet;
       setResult(parsed);
+      console.log(wallet.walletData || wallet)
       // Prefer strict, snake_case object
       //const strict = wallet.clientParsed || wallet.walletData?.clientParsed;
       //setResult(strict || wallet.walletData || wallet);
@@ -292,20 +324,25 @@ export default function ResumeUploader() {
   }
 
   const renderStructuredResult = (data) => {
-    if (!data || typeof data !== 'object') {
-      return <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>;
-    }
+  if (!data || typeof data !== 'object') {
+    return <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>;
+  }
+  
+  // ✨ NEW: Reorder the keys before stringifying for display/download
+  const orderedData = reorderResumeKeys(data); 
 
-    return (
-      <div>
-        {/* Raw JSON */}
-        <ComponentSection>
-          <ComponentTitle>Raw JSON Data</ComponentTitle>
-          <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>
-        </ComponentSection>
-      </div>
-    );
-  };
+  return (
+    <div>
+      {/* Raw JSON (now ordered for display) */}
+      <ComponentSection>
+        <ComponentTitle>Raw JSON Data (Front-end Ordered)</ComponentTitle>
+        {/* Pass the ordered data to JSON.stringify */}
+        <JSONPreview>{JSON.stringify(orderedData, null, 2)}</JSONPreview> 
+      </ComponentSection>
+    </div>
+  );
+};
+
 
   return (
     <Container>
