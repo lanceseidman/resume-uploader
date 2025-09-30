@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import styled, { keyframes } from "styled-components";
 
 const API_URL = 'https://gan804cnbj.execute-api.us-east-1.amazonaws.com/prod'; //process.env.REACT_APP_API_URL;
-const API_KEY = process.env.REACT_APP_API_KEY;
+const API_KEY = 'extra-secret-key-here'; // process.env.REACT_APP_API_KEY;
 
 // Animations
 const fadeIn = keyframes`
