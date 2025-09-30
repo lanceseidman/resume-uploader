@@ -298,7 +298,12 @@ export default function ResumeUploader() {
 
       // 3) Fetch JUST the JSON -> GET /wallet/{walletId}?walletVersionId=...&view=client
       const walletRes = await fetch(
-        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}&view=client`
+        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}&view=client`,
+        {
+          headers: {
+            'x-api-key': API_KEY
+          }
+        }
       );
       if (!walletRes.ok) throw new Error("");
 
