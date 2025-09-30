@@ -252,7 +252,7 @@ export default function ResumeUploader() {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
-          ...(API_KEY && { "x-api-key": API_KEY }),
+          "x-api-key": `${API_KEY}`,
         },
         body: file,
       });
@@ -267,7 +267,7 @@ export default function ResumeUploader() {
         await sleep(3000);
         const statusRes = await fetch(`${API_URL}/status/${jobId}`, {
           headers: {
-            ...(API_KEY && { "x-api-key": API_KEY }),
+            "x-api-key": `${API_KEY}`,
           },
         });
         if (!statusRes.ok) continue;
