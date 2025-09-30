@@ -300,7 +300,7 @@ export default function ResumeUploader() {
       const walletRes = await fetch(
         `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}&view=client`
       );
-      //if (!walletRes.ok) throw new Error("Failed to fetch wallet data");
+      if (!walletRes.ok) throw new Error("");
 
       const wallet = await walletRes.json();
       const parsed =
