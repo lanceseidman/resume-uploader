@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import styled, { keyframes } from "styled-components";
 
 const API_URL = 'https://gan804cnbj.execute-api.us-east-1.amazonaws.com/prod'; //process.env.REACT_APP_API_URL;
-const API_KEY = 'extra-secret-key-here'; // process.env.REACT_APP_API_KEY;
+const API_KEY = 'extra-secret-key-here'; //process.env.REACT_APP_API_KEY; // Make sure exists
 
 // Animations
 const fadeIn = keyframes`
@@ -252,7 +252,7 @@ export default function ResumeUploader() {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
-          ...(API_KEY && { "x-api-key": API_KEY }),
+          "x-api-key": `${API_KEY}`,
         },
         body: file,
       });
@@ -267,7 +267,7 @@ export default function ResumeUploader() {
         await sleep(3000);
         const statusRes = await fetch(`${API_URL}/status/${jobId}`, {
           headers: {
-            ...(API_KEY && { "x-api-key": API_KEY }),
+            "x-api-key": `${API_KEY}`,
           },
         });
         if (!statusRes.ok) continue;
@@ -298,9 +298,14 @@ export default function ResumeUploader() {
 
       // 3) Fetch JUST the JSON -> GET /wallet/{walletId}?walletVersionId=...&view=client
       const walletRes = await fetch(
-        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}&view=client`
+        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}&view=client`,
+        {
+          headers: {
+            'x-api-key': API_KEY
+          }
+        }
       );
-      //if (!walletRes.ok) throw new Error("Failed to fetch wallet data");
+      if (!walletRes.ok) throw new Error("");
 
       const wallet = await walletRes.json();
       const parsed =
