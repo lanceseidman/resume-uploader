@@ -193,13 +193,14 @@ function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
 function reorderResumeKeys(data) {
   if (!data || typeof data !== 'object') return data;
   
-  // This is the desired key order from the backend's STRICT_RESUME_INSTRUCTIONS
+  // This matches the backend's output order with O*NET skills
   const ORDER = [
-    "skills_all",
-    "personal_info",
-    "experience",
-    "education_and_training",
-    "other"
+    "personal_info",           // 1. Personal info first
+    "skills_all",              // 2. All skills
+    "skills_onet_matched",     // 3. O*NET matched skills (NEW!)
+    "experience",              // 4. Experience
+    "education_and_training",  // 5. Education
+    "other"                    // 6. Other
   ];
 
   const orderedData = {};
@@ -211,7 +212,7 @@ function reorderResumeKeys(data) {
     }
   }
 
-  // 2. Add any extra keys not in the desired order (for safety, though none are expected)
+  // 2. Add any extra keys not in the desired order (for safety)
   for (const key in data) {
     if (!(key in orderedData)) {
       orderedData[key] = data[key];
