@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import styled, { keyframes } from "styled-components";
 
-const API_URL = 'https://235hn8z3q1.execute-api.us-east-1.amazonaws.com/prod'; //process.env.REACT_APP_API_URL;
+const API_URL = 'https://gan804cnbj.execute-api.us-east-1.amazonaws.com/prod'; //process.env.REACT_APP_API_URL;
 const API_KEY = 'extra-secret-key-here'; //process.env.REACT_APP_API_KEY; // Make sure exists
 
 // Animations
@@ -188,6 +188,26 @@ const SkillTag = styled.span`
   font-weight: 500;
 `;
 
+const DocumentPreview = styled.div`
+  height: 500px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  background: #f9f9f9;
+  border: 1px solid #eee;
+  border-radius: 6px;
+`;
+
+const PreviewPlaceholder = styled.div`
+  text-align: center;
+  color: #666;
+`;
+
+const PreviewIcon = styled.div`
+  font-size: 3em;
+  margin-bottom: 0.5em;
+`;
+
 function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
 
 function reorderResumeKeys(data) {
@@ -233,6 +253,42 @@ export default function ResumeUploader() {
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
+      const fileExtension = selectedFile.name.split('.').pop().toLowerCase();
+      
+      // Enhanced validation
+      const validExtensions = ['pdf', 'docx'];
+      const validMimeTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword', // older Word format just in case
+      ];
+      
+      // Check extension
+      if (!validExtensions.includes(fileExtension)) {
+        alert('Please select a PDF or DOCX file');
+        e.target.value = ''; // Clear the input
+        return;
+      }
+      
+      // Some browsers might not detect DOCX MIME type correctly
+      if (selectedFile.type && !validMimeTypes.includes(selectedFile.type) && fileExtension === 'docx') {
+        console.warn('Browser did not detect DOCX MIME type correctly, proceeding anyway');
+      }
+      
+      // Check file size
+      if (selectedFile.size === 0) {
+        alert('File appears to be empty');
+        e.target.value = '';
+        return;
+      }
+      
+      console.log('File selected:', {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type || 'not detected',
+        extension: fileExtension
+      });
+      
       setFile(selectedFile);
       setFileUrl(URL.createObjectURL(selectedFile));
     }
@@ -248,16 +304,54 @@ export default function ResumeUploader() {
     setWalletInfo(null);
 
     try {
-      // 1) Upload PDF → POST /extract  (must be lower-case)
+      // Determine file type
+      const fileExtension = file.name.split('.').pop().toLowerCase();
+      const isDocx = fileExtension === 'docx';
+      const isPdf = fileExtension === 'pdf';
+      
+      if (!isDocx && !isPdf) {
+        throw new Error("Only PDF and DOCX files are supported");
+      }
+
+      // Read file as ArrayBuffer to preserve binary data
+      const arrayBuffer = await file.arrayBuffer();
+      
+      // Set appropriate content type
+      let contentType = 'application/pdf';
+      if (isDocx) {
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      }
+      
+      console.log('Uploading file:', {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        contentType: contentType,
+        arrayBufferSize: arrayBuffer.byteLength
+      });
+
+      // 1) Upload file → POST /extract
       const uploadRes = await fetch(`${API_URL}/extract`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/pdf",
+          "Content-Type": contentType,
           "x-api-key": `${API_KEY}`,
         },
-        body: file,
+        body: arrayBuffer, // Send as ArrayBuffer to preserve binary data
       });
-      if (!uploadRes.ok) throw new Error("Upload failed: " + (await uploadRes.text()));
+      
+      if (!uploadRes.ok) {
+        const errorText = await uploadRes.text();
+        console.error("Upload failed:", errorText);
+        
+        // If ArrayBuffer fails, try FormData as fallback
+        if (errorText.includes("Unsupported file type")) {
+          console.log("Trying FormData method...");
+          return uploadFileWithFormData();
+        }
+        
+        throw new Error("Upload failed: " + errorText);
+      }
 
       const { jobId, walletId, walletVersionId } = await uploadRes.json();
       setStatus("Uploaded! Processing your resume");
@@ -316,9 +410,6 @@ export default function ResumeUploader() {
         wallet;
       setResult(parsed);
       console.log(wallet.walletData || wallet)
-      // Prefer strict, snake_case object
-      //const strict = wallet.clientParsed || wallet.walletData?.clientParsed;
-      //setResult(strict || wallet.walletData || wallet);
 
       setStatus("Done!");
     } catch (err) {
@@ -329,26 +420,111 @@ export default function ResumeUploader() {
     }
   }
 
-  const renderStructuredResult = (data) => {
-  if (!data || typeof data !== 'object') {
-    return <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>;
+  // Fallback method using FormData
+  async function uploadFileWithFormData() {
+    try {
+      const formData = new FormData();
+      formData.append('file', file, file.name);
+      
+      // Add metadata if needed
+      const fileExtension = file.name.split('.').pop().toLowerCase();
+      formData.append('fileType', fileExtension);
+      
+      console.log('Trying FormData upload for:', file.name);
+      
+      const uploadRes = await fetch(`${API_URL}/extract`, {
+        method: "POST",
+        headers: {
+          "x-api-key": API_KEY,
+          // Don't set Content-Type - let browser set it with boundary for multipart
+        },
+        body: formData,
+      });
+      
+      if (!uploadRes.ok) {
+        const errorText = await uploadRes.text();
+        throw new Error("FormData upload failed: " + errorText);
+      }
+      
+      const { jobId, walletId, walletVersionId } = await uploadRes.json();
+      setStatus("Uploaded! Processing your resume");
+      
+      // Continue with polling logic (same as main function)
+      let completedWalletVersionId = walletVersionId || null;
+      while (true) {
+        await sleep(3000);
+        const statusRes = await fetch(`${API_URL}/status/${jobId}`, {
+          headers: {
+            "x-api-key": `${API_KEY}`,
+          },
+        });
+        if (!statusRes.ok) continue;
+
+        const data = await statusRes.json();
+        if (data.Status === "COMPLETED") {
+          completedWalletVersionId = data.WalletVersionId || walletVersionId;
+          setWalletInfo({
+            jobId: data.JobId,
+            walletId: data.WalletId || walletId,
+            walletVersionId: completedWalletVersionId,
+            createdAt: data.CreatedAt,
+            completedAt: data.CompletedAt,
+            isActive: data.IsActive,
+            sourceDocuments: data.SourceDocuments,
+          });
+          if (data.ClientResult) {
+            setResult(data.ClientResult);
+          }
+          break;
+        }
+        if (data.Status === "FAILED") throw new Error("Processing failed.");
+        setStatus(`Processing your resume (${String(data.Status || "").toLowerCase()})`);
+      }
+
+      setStatus("Done! Fetching results...");
+
+      const walletRes = await fetch(
+        `${API_URL}/wallet/${encodeURIComponent(walletId)}?walletVersionId=${encodeURIComponent(completedWalletVersionId)}&view=client`,
+        {
+          headers: {
+            'x-api-key': API_KEY
+          }
+        }
+      );
+      if (!walletRes.ok) throw new Error("Failed to fetch results");
+
+      const wallet = await walletRes.json();
+      const parsed = wallet.clientParsed || wallet.walletData || wallet.Result || wallet;
+      setResult(parsed);
+      
+      setStatus("Done!");
+      
+    } catch (err) {
+      console.error("FormData upload error:", err);
+      setStatus(err.message || "An error occurred");
+      setIsLoading(false);
+    }
   }
-  
-  // ✨ NEW: Reorder the keys before stringifying for display/download
-  const orderedData = reorderResumeKeys(data); 
 
-  return (
-    <div>
-      {/* Raw JSON (now ordered for display) */}
-      <ComponentSection>
-        <ComponentTitle>Raw JSON Data (Front-end Ordered)</ComponentTitle>
-        {/* Pass the ordered data to JSON.stringify */}
-        <JSONPreview>{JSON.stringify(orderedData, null, 2)}</JSONPreview> 
-      </ComponentSection>
-    </div>
-  );
-};
+  const renderStructuredResult = (data) => {
+    if (!data || typeof data !== 'object') {
+      return <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>;
+    }
+    
+    // Reorder the keys before stringifying for display/download
+    const orderedData = reorderResumeKeys(data); 
 
+    return (
+      <div>
+        {/* Raw JSON (now ordered for display) */}
+        <ComponentSection>
+          <ComponentTitle>Raw JSON Data (Front-end Ordered)</ComponentTitle>
+          {/* Pass the ordered data to JSON.stringify */}
+          <JSONPreview>{JSON.stringify(orderedData, null, 2)}</JSONPreview> 
+        </ComponentSection>
+      </div>
+    );
+  };
 
   return (
     <Container>
@@ -358,14 +534,14 @@ export default function ResumeUploader() {
           <FileInput
             type="file"
             id="resume-upload"
-            accept="application/pdf"
+            accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
             onChange={handleFileChange}
             required
           />
           <FileInputLabel htmlFor="resume-upload">
             <UploadIcon>📄</UploadIcon>
             <div>Drag & drop your resume here or click to browse</div>
-            <div><small>(PDF files only)</small></div>
+            <div><small>(PDF and DOCX files only)</small></div>
             {file && <FileName>{file.name}</FileName>}
           </FileInputLabel>
         </FileInputContainer>
@@ -404,17 +580,27 @@ export default function ResumeUploader() {
             <ResultGrid>
               <ResultColumn>
                 <ColumnTitle>Resume Preview</ColumnTitle>
-                <PDFPreview
-                  src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                  title="Resume Preview"
-                />
+                {file?.name.toLowerCase().endsWith('.pdf') ? (
+                  <PDFPreview
+                    src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                    title="Resume Preview"
+                  />
+                ) : (
+                  <DocumentPreview>
+                    <PreviewPlaceholder>
+                      <PreviewIcon>📄</PreviewIcon>
+                      <div>DOCX Preview not available</div>
+                      <div><small>{file?.name}</small></div>
+                    </PreviewPlaceholder>
+                  </DocumentPreview>
+                )}
                 <DownloadButton
                   href={fileUrl}
                   download={file?.name || "resume.pdf"}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Download Original PDF
+                  Download Original {file?.name.toLowerCase().endsWith('.docx') ? 'DOCX' : 'PDF'}
                 </DownloadButton>
               </ResultColumn>
 
@@ -424,7 +610,7 @@ export default function ResumeUploader() {
                   {renderStructuredResult(result)}
                 </div>
                 <DownloadButton
-                  href={`data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(result, null, 2))}`}
+                  href={`data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(reorderResumeKeys(result), null, 2))}`}
                   download="resume_results.json"
                 >
                   Download JSON Results
