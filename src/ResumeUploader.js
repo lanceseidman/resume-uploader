@@ -238,25 +238,36 @@ export default function ResumeUploader() {
     }
   };
 
-  async function uploadFile(e) {
-    e.preventDefault();
-    if (!file) return;
+async function uploadFile(e) {
+  e.preventDefault();
+  if (!file) return;
 
-    setIsLoading(true);
-    setStatus("Uploading...");
-    setResult(null);
-    setWalletInfo(null);
+  setIsLoading(true);
+  setStatus("Uploading...");
+  setResult(null);
+  setWalletInfo(null);
 
-    try {
-      // 1) Upload PDF → POST /extract  (must be lower-case)
-      const uploadRes = await fetch(`${API_URL}/extract`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/pdf",
-          "x-api-key": `${API_KEY}`,
-        },
-        body: file,
-      });
+  try {
+    // Determine content type based on file extension
+    const fileExtension = file.name.split('.').pop().toLowerCase();
+    let contentType = 'application/pdf'; // default
+    
+    if (fileExtension === 'docx') {
+      contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (fileExtension === 'pdf') {
+      contentType = 'application/pdf';
+    }
+
+    // 1) Upload file → POST /extract
+    const uploadRes = await fetch(`${API_URL}/extract`, {
+      method: "POST",
+      headers: {
+        "Content-Type": contentType,
+        "x-api-key": `${API_KEY}`,
+      },
+      body: file,
+    });
+    
       if (!uploadRes.ok) throw new Error("Upload failed: " + (await uploadRes.text()));
 
       const { jobId, walletId, walletVersionId } = await uploadRes.json();
@@ -334,7 +345,6 @@ export default function ResumeUploader() {
     return <JSONPreview>{JSON.stringify(data, null, 2)}</JSONPreview>;
   }
   
-  // ✨ NEW: Reorder the keys before stringifying for display/download
   const orderedData = reorderResumeKeys(data); 
 
   return (
@@ -356,16 +366,16 @@ export default function ResumeUploader() {
       <UploadForm onSubmit={uploadFile}>
         <FileInputContainer>
           <FileInput
-            type="file"
-            id="resume-upload"
-            accept="application/pdf"
-            onChange={handleFileChange}
-            required
-          />
+              type="file"
+              id="resume-upload"
+              accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
+              onChange={handleFileChange}
+              required
+            />
           <FileInputLabel htmlFor="resume-upload">
             <UploadIcon>📄</UploadIcon>
             <div>Drag & drop your resume here or click to browse</div>
-            <div><small>(PDF files only)</small></div>
+            <div><small>(PDF and DOCX files only)</small></div>
             {file && <FileName>{file.name}</FileName>}
           </FileInputLabel>
         </FileInputContainer>
@@ -404,30 +414,35 @@ export default function ResumeUploader() {
             <ResultGrid>
               <ResultColumn>
                 <ColumnTitle>Resume Preview</ColumnTitle>
-                <PDFPreview
-                  src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                  title="Resume Preview"
-                />
+                {file?.name.toLowerCase().endsWith('.pdf') ? (
+                  <PDFPreview
+                    src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                    title="Resume Preview"
+                  />
+                ) : (
+                  <div style={{ 
+                    height: '500px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    background: '#f9f9f9',
+                    border: '1px solid #eee',
+                    borderRadius: '6px'
+                  }}>
+                    <div style={{ textAlign: 'center', color: '#666' }}>
+                      <div style={{ fontSize: '3em', marginBottom: '0.5em' }}>📄</div>
+                      <div>DOCX Preview not available</div>
+                      <div><small>{file?.name}</small></div>
+                    </div>
+                  </div>
+                )}
                 <DownloadButton
                   href={fileUrl}
                   download={file?.name || "resume.pdf"}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Download Original PDF
-                </DownloadButton>
-              </ResultColumn>
-
-              <ResultColumn>
-                <ColumnTitle>Parsed Results</ColumnTitle>
-                <div style={{ height: '500px', overflowY: 'auto', background: 'white', border: '1px solid #eee', borderRadius: '6px' }}>
-                  {renderStructuredResult(result)}
-                </div>
-                <DownloadButton
-                  href={`data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(result, null, 2))}`}
-                  download="resume_results.json"
-                >
-                  Download JSON Results
+                  Download Original {file?.name.toLowerCase().endsWith('.docx') ? 'DOCX' : 'PDF'}
                 </DownloadButton>
               </ResultColumn>
             </ResultGrid>
