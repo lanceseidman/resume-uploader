@@ -336,7 +336,7 @@ export default function ResumeUploader() {
         headers: {
           "Content-Type": contentType,
           "x-api-key": `${API_KEY}`,
-          "Content-Disposition": `attachment; filename="${file.name}"`,
+          "x-filename": file.name,
         },
         body: arrayBuffer, // Send as ArrayBuffer to preserve binary data
       });
