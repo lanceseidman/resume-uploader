@@ -248,24 +248,20 @@ async function uploadFile(e) {
   setWalletInfo(null);
 
   try {
+    // Create FormData and append the file
+    const formData = new FormData();
+    formData.append('file', file);
+    
     // Determine content type based on file extension
     const fileExtension = file.name.split('.').pop().toLowerCase();
-    let contentType = 'application/pdf'; // default
     
-    if (fileExtension === 'docx') {
-      contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    } else if (fileExtension === 'pdf') {
-      contentType = 'application/pdf';
-    }
-
-    // 1) Upload file → POST /extract
+    // Send as multipart/form-data
     const uploadRes = await fetch(`${API_URL}/extract`, {
       method: "POST",
       headers: {
-        "Content-Type": contentType,
         "x-api-key": `${API_KEY}`,
       },
-      body: file,
+      body: formData,
     });
     
       if (!uploadRes.ok) throw new Error("Upload failed: " + (await uploadRes.text()));
