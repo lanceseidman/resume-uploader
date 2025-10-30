@@ -217,7 +217,8 @@ function reorderResumeKeys(data) {
   const ORDER = [
     "personal_info",           // 1. Personal info first
     "skills_all",              // 2. All skills
-    "skills_onet_matched",     // 3. O*NET matched skills (NEW!)
+    "skills_onet_matched",     // 3. O*NET matched skills
+    "skills_by_onet_category",
     "experience",              // 4. Experience
     "education_and_training",  // 5. Education
     "other"                    // 6. Other
